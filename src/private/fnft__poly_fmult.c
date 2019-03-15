@@ -43,6 +43,124 @@ inline INT poly_fmult_two_polys_len(const UINT deg)
     return fft_wrapper_next_fft_length(2*(deg + 1) - 1);
 }
 
+inline void karatsuba_fmult_two_polys(const UINT deg1,
+                               const UINT deg2,
+                               const UINT len,
+                               COMPLEX const * const p1,
+                               COMPLEX const * const p2,
+                               COMPLEX * const res)
+{
+    UINT low_deg;
+    UINT high_deg1;
+    UINT high_deg2;
+    UINT deg;
+    
+    
+    if (deg1 + deg2 < 20) {
+        for (int i = 0; i <= deg1; i++)
+            for (int j = 0; j <= deg2; j++)
+                res[i+j] += p1[i]*p2[j];
+        return;
+    }
+    
+    if (deg1 > 2*deg2) {
+        
+        low_deg = (deg1>>1);
+        high_deg1 = deg1 - low_deg - 1;
+        
+        COMPLEX * tmp1 = (COMPLEX *)malloc((low_deg+deg2+1)*sizeof(COMPLEX));
+        memset(tmp1, 0, (low_deg+deg2+1)*sizeof(COMPLEX));
+        COMPLEX * tmp2 = (COMPLEX *)malloc((high_deg1+deg2+1)*sizeof(COMPLEX));
+        memset(tmp2, 0, (high_deg1+deg2+1)*sizeof(COMPLEX));
+        
+        karatsuba_fmult_two_polys(low_deg, deg2, low_deg+deg2+1, p1, p2, tmp1);
+        karatsuba_fmult_two_polys(high_deg1, deg2, high_deg1+deg2+1, p1+low_deg+1, p2, tmp2);
+        memcpy(res, tmp1, (low_deg+deg2+1)*sizeof(COMPLEX));
+        for (UINT i = 0; i<=high_deg1+deg2; i++) {
+            res[i+low_deg+1] += tmp2[i];
+        }
+        free(tmp1);
+        free(tmp2);
+        tmp1 = NULL;
+        tmp2 = NULL;
+        return;
+    }
+    else if (deg2 > 2*deg1) {
+        
+        low_deg = (deg2>>1);
+        high_deg2 = deg2 - low_deg - 1;
+        
+        COMPLEX * tmp1 = (COMPLEX *)malloc((low_deg+deg1+1)*sizeof(COMPLEX));
+        memset(tmp1, 0, (low_deg+deg1+1)*sizeof(COMPLEX));
+        COMPLEX * tmp2 = (COMPLEX *)malloc((high_deg2+deg1+1)*sizeof(COMPLEX));
+        memset(tmp2, 0, (high_deg2+deg1+1)*sizeof(COMPLEX));
+        
+        karatsuba_fmult_two_polys(deg1, low_deg, deg1+low_deg+1, p1, p2, tmp1);
+        karatsuba_fmult_two_polys(deg1, high_deg2, high_deg2+deg1+1, p1, p2+low_deg+1, tmp2);
+        memcpy(res, tmp1, (low_deg+deg1+1)*sizeof(COMPLEX));
+        for (UINT i = 0; i<=high_deg2+deg1 ; i++) {
+            res[i+low_deg+1] += tmp2[i];
+        }
+        free(tmp1);
+        free(tmp2);
+        tmp1 = NULL;
+        tmp2 = NULL;
+        return;
+    }
+    else {
+        deg = deg1>deg2 ? deg1:deg2;
+        low_deg = (deg >> 1);
+        high_deg1 = deg1 - low_deg - 1;
+        high_deg2 = deg2 - low_deg - 1;
+        
+        COMPLEX * tmp1 = (COMPLEX *)malloc((2*low_deg+1)*sizeof(COMPLEX));
+        memset(tmp1, 0, (2*low_deg+1)*sizeof(COMPLEX));
+        COMPLEX * tmp2 = (COMPLEX *)malloc((high_deg1+high_deg2+1)*sizeof(COMPLEX));
+        memset(tmp2, 0, (high_deg1+high_deg2+1)*sizeof(COMPLEX));
+        COMPLEX * tmp3 = (COMPLEX *)malloc((2*low_deg+1)*sizeof(COMPLEX));
+        memset(tmp3, 0, (2*low_deg+1)*sizeof(COMPLEX));
+        COMPLEX * buf1 = (COMPLEX *)malloc((low_deg+1)*sizeof(COMPLEX));
+        memcpy(buf1, p1, (low_deg+1)*sizeof(COMPLEX));
+        COMPLEX * buf2 = (COMPLEX *)malloc((low_deg+1)*sizeof(COMPLEX));
+        memcpy(buf2, p2, (low_deg+1)*sizeof(COMPLEX));
+        
+        karatsuba_fmult_two_polys(low_deg, low_deg, 2*low_deg+1, p1, p2, tmp1);
+        karatsuba_fmult_two_polys(high_deg1, high_deg2, high_deg1+high_deg2+1, p1+low_deg+1, p2+low_deg+1, tmp2);
+        memcpy(res, tmp1, (2*low_deg+1)*sizeof(COMPLEX));
+        memcpy(res+2*low_deg+2, tmp2, (high_deg1+high_deg2+1)*sizeof(COMPLEX));
+        
+        for (int i = 0; i <= high_deg1; i++) {
+            buf1[i] += p1[i+low_deg+1];
+        }
+        for (int i = 0; i <= high_deg2; i++) {
+            buf2[i] += p2[i+low_deg+1];
+        }
+        karatsuba_fmult_two_polys(low_deg, low_deg, 2*low_deg+1, buf1, buf2, tmp3);
+        for (int i = 0; i <= high_deg1 + high_deg2; i++) {
+            tmp3[i] -= (tmp1[i] + tmp2[i]);
+        }
+        for (UINT i = high_deg1 + high_deg2 + 1; i <= 2*low_deg; i++) {
+            tmp3[i] -= tmp1[i];
+        }
+        
+        for (int i = 0; i <= 2*low_deg ; i++) {
+            res[i+low_deg+1] += tmp3[i];
+        }
+        free(tmp1);
+        free(tmp2);
+        free(tmp3);
+        free(buf1);
+        free(buf2);
+        tmp1 = NULL;
+        tmp2 = NULL;
+        tmp3 = NULL;
+        buf1 = NULL;
+        buf2 = NULL;
+        return;
+    }
+    return;
+}
+
 inline INT poly_fmult_two_polys(
     const UINT deg,
     COMPLEX const * const p1, 
@@ -60,6 +178,16 @@ inline INT poly_fmult_two_polys(
 
     // Prepare buffers
     len = poly_fmult_two_polys_len(deg);
+    memset(buf1, 0, len*sizeof(COMPLEX));
+    //len = 2*deg + 1;
+    karatsuba_fmult_two_polys(deg, deg, len, p1, p2, buf1);
+    
+    /*
+    printf("output of Karatsuba is:\n");
+    for (int j = 0; j <= 2*deg; j ++) {
+        printf("%f + %f I\n", CREAL(buf1[j]), CIMAG(buf1[j]));
+    }
+    printf("\n");
 
     // FFT of first polynomial
     for (i = 0; i <= deg; i++)
@@ -80,17 +208,21 @@ inline INT poly_fmult_two_polys(
         buf0[i] = buf1[i] * buf2[i];
     ret_code = fft_wrapper_execute_plan(plan_inv, buf0, buf1);
     CHECK_RETCODE(ret_code, leave_fun);
-
+*/
+    
     // Extract result
     if (!add_flag) {
         for (i = 0; i < 2*deg + 1; i++) {
-            result[i] = buf1[i]/len;
+            //result[i] = buf1[i]/len;
+            result[i] = buf1[i];
         }
     } else {
         for (i = 0; i < 2*deg + 1; i++) {
-            result[i] += buf1[i]/len;
+            //result[i] += buf1[i]/len;
+            result[i] += buf1[i];
         }
     }
+ 
 
 leave_fun:
     return ret_code;
